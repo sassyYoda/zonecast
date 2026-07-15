@@ -1,0 +1,39 @@
+# Secrets — never commit
+.env
+
+# Agent-facing scaffolding — kept local, not part of the published project.
+# CLAUDE.md is build instructions; PROJECT_CONTEXT.md is a recap of the design
+# conversation. Both are internal working docs. PRD.md is the public spec.
+CLAUDE.md
+PROJECT_CONTEXT.md
+
+# Personal listener profile. This is user-editable state, not code (see CLAUDE.md).
+# Ship prompts/skills/explainer-podcast/references/listener.example.md instead;
+# `zonecast profile init` copies it into place on first run.
+prompts/skills/explainer-podcast/references/listener.md
+
+# Generated episode artifacts — audio, drafts, manifests
+episodes/*
+!episodes/.gitkeep
+
+# Runtime-distilled field style guides (FR-10 cache, regenerated on demand)
+styles/*
+!styles/.gitkeep
+
+# Published feed
+feed.xml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# macOS
+.DS_Store

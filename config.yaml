@@ -1,0 +1,59 @@
+# zonecast configuration — defaults per PRD §7/§15.
+# External facts verified against live docs 2026-07-15 (docs.claude.com, elevenlabs.io/docs).
+
+llm:
+  provider: anthropic
+  model_quality: claude-opus-4-8      # stages: blueprint, generate, polish. Verified current.
+  model_fast: claude-sonnet-5         # stages: classification, normalization.
+                                      # Was claude-sonnet-4-6 (previous-gen); sonnet-5 is current.
+  max_retries_json: 3                 # Fallback only — structured outputs are the primary path
+                                      # (output_config.format guarantees schema-valid JSON).
+
+tts:
+  # LOCKED — do not "upgrade" to eleven_v3 without re-reading this.
+  # eleven_v3 is now ElevenLabs' flagship, but request stitching (previous_request_ids /
+  # previous_text) is NOT available on v3. Zonecast's chunked rendering depends on stitching
+  # for prosody continuity across chunk seams (PRD FR-7), so v3 is disqualified on a hard
+  # constraint. Independently, ElevenLabs documents multilingual_v2 as "most stable on
+  # long-form generations" and recommends it for audiobook-style content. Both reasons point
+  # the same way. Re-evaluate only if stitching ships for v3.
+  provider: elevenlabs
+  model: eleven_multilingual_v2       # 10k char/request limit. Supports request stitching.
+  model_fast: eleven_flash_v2_5       # `--fast` tier, ~50% cost. 40k char/request limit.
+  voice_host: ""                      # ElevenLabs voice ID — user must set
+  voice_guest: ""                     # for two-host mode (M3)
+  chunk_chars_min: 2000
+  chunk_chars_max: 5000
+  # Request stitching: max 3 previous_request_ids per call, and IDs expire after 2 HOURS.
+  # A `resume` past that window must fall back to previous_text continuity (see PRD §11-12).
+  stitch_max_previous_ids: 3
+  stitch_id_ttl_sec: 7200
+  # MUST NOT exceed your ElevenLabs plan's concurrency cap or renders 429 mid-generate:
+  # Free 2 | Starter 3 | Creator 5 | Pro 10 | Scale 15 | Business 15
+  max_parallel_requests: 3
+
+script:
+  wpm: 150
+  section_words_min: 800
+  section_words_max: 1200
+  budget_tolerance_pct: 20
+
+audio:
+  format: mp3
+  bitrate: 128k
+  channels: 1
+  loudnorm: "I=-16:TP=-1.5:LRA=11"
+  gap_speaker_change_ms: 400
+  gap_section_boundary_ms: 1500
+
+paths:
+  skill_dir: prompts/skills/explainer-podcast
+  styles_dir: styles
+  episodes_dir: episodes
+
+feed:
+  title: "Zonecast"
+  description: "Personal ground-up explainers for long zone 2 sessions."
+  author: "Zonecast"
+  language: en-us
+  feed_path: feed.xml                 # object key within the bucket
