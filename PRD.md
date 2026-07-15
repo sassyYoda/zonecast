@@ -82,17 +82,28 @@ Every stage writes its output to the episode's working directory before the next
 
 ### FR-3 Planning pass (stage 2)
 - One LLM call. Input: source bundle + optional user constraints (`--duration 60`, `--depth overview|standard|deep`, session note like "3h ride").
-- Output: strict JSON, 2–3 offers (schema §8.1). Enforce with retry-on-invalid-JSON (max 3 attempts, then fail loudly).
+- Output: 2–3 offers (schema §8.1) via **structured outputs** (`output_config.format` + json_schema), which guarantee a schema-valid response. Retry-on-invalid-JSON (max 3 attempts, persist raw output, then fail loudly) remains only as a fallback path, not the primary mechanism.
 - CLI presents offers, user picks by number; `--auto` picks the middle offer. If the user passed `--duration`, generate offers at that duration varying only depth/angle.
+- **Cold-start spread.** With no `--duration` and no session note, offers must span the listener's real session range — roughly 15 / 45 / 120 min — rather than clustering around one length. `listener.md` implies this; the stage-2 prompt must say it outright.
+- **`style_file` is optional/nullable through M1–M3.** `styles/` is empty at cold start and FR-10 is M4. The planner must not fail, invent a path, or block when no style file exists.
 
 ### FR-4 Blueprint (stage 3)
-- One LLM call. Input: chosen offer + source bundle. Output: blueprint JSON (schema §8.2): ordered sections, each with job, word budget (800–1,200), open/close tension, recap flag; plus the spine analogy and its explicit mapping.
-- Validate: sum of section budgets within ±10% of `duration_min × 150`; every section has a but/therefore link to the next (the LLM must output the connective type; reject `and_then`).
+- One LLM call. Input: chosen offer + source bundle. Output: blueprint JSON (schema §8.2): ordered sections, each with job, word budget, open/close tension, recap flag; plus the spine analogy and its explicit mapping.
+- **Section budgets are duration-scoped.** For `duration_min >= 30`, sections are 800–1,200 words. For `duration_min <= 20` (overview), beats are 350–1,000 words. The 800-word floor is arithmetically incompatible with a 2,250-word contract — a validator applying it unconditionally rejects every valid short episode. Durations of 21–29 min take the ≥30 rule.
+- Validate: sum of section budgets within ±10% of `duration_min × 150`; per-section floor/ceiling per the duration band above; every section has a but/therefore link to the next (the LLM must output the connective type; reject `and_then`).
+- All budgets are **spoken-word** counts (see FR-5a).
 
 ### FR-5 Section generation loop (stage 4)
 - For each section in order: one LLM call with (system: skill assets; user: blueprint, this section's spec, full text of the previous section for voice continuity, and the current STATE block). Output: section prose + updated STATE (schema §8.3).
+- The per-section payload **must always include `spine_analogy` and its mapping** from the blueprint — not just the section spec. The cold open and every subsequent abstraction attach to the spine; a truncated payload that drops it visibly degrades openings. Do not trim it to save tokens.
 - Persist each section to `draft/section-NN.md` and STATE to `draft/state-NN.json` immediately (resumability).
+- STATE lives **only** in `draft/state-NN.json`, never in the deliverable script.
 - Enforce word budget per section: if output deviates > 20%, one automatic retry with corrective instruction; then accept and log.
+
+### FR-5a Spoken-text extraction (shared)
+- A single `spoken_text(markdown) -> str` helper is the **only** basis for every word count and for TTS input. It strips: `[HOST]`/`[GUEST]` speaker tags, `[PAUSE:*]` markers, section headers, the metadata header block, and HTML comments.
+- Consumers: FR-4 budget validation, FR-5 per-section budget enforcement, FR-6 polish budget check, FR-7 normalization, and the §13 acceptance duration check.
+- **This is not cosmetic.** Measured on the hand-run test artifact, the raw file is 2,340 words while the spoken text is 1,965 — a 16% inflation. Counting raw produces an episode that reports 15.5 min and actually runs 13.1, i.e. it silently misses the contract while appearing to hit it. Any budget logic that word-counts a raw draft is wrong.
 
 ### FR-6 Polish pass (stage 5)
 - Process the assembled draft in overlapping windows of ~3 sections (long scripts exceed comfortable single-call editing). Instructions: the skill's Pass-4 checklist (sentence length, signposting at boundaries, redundancy rule, humor pruning, budget check).
@@ -146,11 +157,13 @@ Every stage writes its output to the episode's working directory before the next
       "outline_preview": ["4-6 one-line beats"],
       "deliberately_excluded": ["string"],
       "format_recommendation": "solo | two_host",
-      "style_file": "ml-theory"
+      "style_file": "ml-theory | null"
     }
   ]
 }
 ```
+
+`style_file` is nullable and must be `null` when no matching file exists in `styles/` (always the case before M4 — see FR-3).
 
 ### 8.2 `blueprint.json`
 ```json
@@ -268,7 +281,7 @@ zonecast feed url
 
 ## 13. Acceptance criteria
 
-- **M1:** `zonecast create "how transformers work" --duration 15 --auto` produces a playable MP3 whose duration is within ±15% of 15 min; script passes automated checks: recap beats present at expected cadence (regex on recap markers), no markdown artifacts in TTS text, per-section word budgets within tolerance; kill the process mid-generate → `resume` completes without regenerating finished sections and without duplicate TTS spend.
+- **M1:** `zonecast create "how transformers work" --duration 15 --auto` produces a playable MP3 whose duration is within ±15% of 15 min; script passes automated checks: **expected recap count computed from duration** (≤ 20 min → exactly one mid-episode recap plus the closing re-derivation; ≥ 30 min → every 8–12 min) rather than a fixed cadence regex, no markdown artifacts in TTS text, **no italic emphasis surviving into `spoken_text()`** (see SKILL.md Pass 4), per-section word budgets within tolerance **measured on `spoken_text()`, not the raw file** (FR-5a); kill the process mid-generate → `resume` completes without regenerating finished sections and without duplicate TTS spend.
 - **M2:** New episode appears in Overcast via the private feed within 5 min of `publish`; chapters navigable.
 - **M3:** `--two-host` renders two distinct voices; no "wow/fascinating" reaction lines (lint the script against the ban list).
 - **M4:** A topic in a novel field (e.g., "CRISPR base editing") creates `styles/molecular-bio.md` on first run and reuses it (no distillation call) on second run.
@@ -284,4 +297,6 @@ zonecast feed url
 - Speaking rate: 150 wpm → words = minutes × 150; characters ≈ words × 5.5.
 - 15 min ≈ 2,250 words ≈ 12k chars; 60 min ≈ 9,000 words ≈ 50k chars; 120 min ≈ 18,000 words ≈ 100k chars.
 - ElevenLabs API list pricing (verify current): ~$0.10/1k chars flagship, ~$0.05/1k Flash/Turbo → 2-h episode ≈ $5–10 TTS.
-- Section size: 800–1,200 words. Recap cadence: every 8–12 min. Working-memory ceiling: 3 named objects.
+- Section size: 800–1,200 words for episodes ≥ 30 min; **350–1,000 for overviews ≤ 20 min** (the 800 floor does not fit a 2,250-word contract). All budgets are spoken-word counts (FR-5a).
+- Recap cadence: every 8–12 min for episodes ≥ 30 min. **For ≤ 20 min the correct count is exactly one mid-episode recap plus the closing re-derivation** — not an every-N-minutes cadence.
+- Working-memory ceiling: 3 named objects.

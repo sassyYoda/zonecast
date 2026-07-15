@@ -34,9 +34,17 @@ tts:
 
 script:
   wpm: 150
-  section_words_min: 800
-  section_words_max: 1200
   budget_tolerance_pct: 20
+  # Section floors/ceilings are DURATION-SCOPED (PRD FR-4). The 800-word floor is
+  # arithmetically impossible inside a 2,250-word (15-min) contract, so applying it
+  # unconditionally rejects every valid overview episode.
+  # All counts are spoken words only — see FR-5a / SKILL.md Pass 4.
+  overview_max_duration_min: 20     # <= this uses the overview band
+  standard_min_duration_min: 30     # >= this uses the standard band; 21-29 takes standard
+  section_words_min: 800            # standard band (>= 30 min)
+  section_words_max: 1200
+  overview_beat_words_min: 350      # overview band (<= 20 min)
+  overview_beat_words_max: 1000
 
 audio:
   format: mp3

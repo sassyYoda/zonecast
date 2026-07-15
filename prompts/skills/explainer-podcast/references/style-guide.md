@@ -68,6 +68,16 @@ Vary these; never reuse the same phrasing twice in an episode.
 - Pre-difficulty warning: "The next stretch is the steepest climb in the episode. Take it easy, I'll go slow, and there's a recap at the top."
 - Post-difficulty relief: "That was the hard part. Genuinely. It's all downhill from here."
 
+**Watch the terrain metaphors stacking.** Several phrases above are climb/descent-shaped, and
+the listener is *literally* climbing. Those sanctioned metaphors silently consume the same
+budget as the deliberate nods to the listener's setting that `listener.md` caps at once or
+twice an episode — and the two are indistinguishable to a listener. A 15-minute test draft
+landed "top of the hill," "steepest climb," "recap at the top," "hour two of a ride," and
+"earn its own ride": individually defensible, collectively a running bit, which is exactly what
+`listener.md` forbids. Budget them **together**, not separately, and vary the register — reach
+for a non-terrain signpost ("here's the part everything has been building toward") when you've
+already spent the terrain ones. This compounds badly over 90+ minutes.
+
 ## 4. Analogy craft
 
 - **One spine, few satellites.** One extended analogy carries the episode (chosen in Pass 2). Local one-shot analogies are fine, but they must not conflict with the spine's imagery. Two competing extended metaphors is worse than none.
@@ -77,7 +87,9 @@ Vary these; never reuse the same phrasing twice in an episode.
 
 ## 5. Duration templates
 
-Word budget = minutes × 150. Section = 800–1,200 words.
+Word budget = minutes × 150, counted in **spoken words only** (see SKILL.md Pass 4).
+Section = 800–1,200 words for episodes ≥ 30 min. **Overview episodes (≤ 20 min) use beats of
+350–1,000 words** — the 800-word floor does not fit inside a 2,250-word contract.
 
 ### Overview — 15–20 min (~2,300–3,000 words)
 One arc, one insight. Hook (1 min) → minimal scaffolding, only prerequisites the punchline needs (5 min) → core mechanism via spine analogy (7 min) → the click + why it matters + where it breaks (4 min) → closing recap (1 min). Ruthless scoping: name what you're skipping in one sentence and move on. No secondary threads.

@@ -35,7 +35,8 @@ Present the offers and wait for the user to pick (or pick the middle one if they
 Turn the chosen offer into a section-by-section outline. For each section specify:
 
 - **Job**: the one thing this section makes the listener understand or feel. One job per section.
-- **Word budget**: 800–1,200 words per section (5–8 minutes). Longer sections lose people; shorter ones feel choppy.
+- **Word budget**: 800–1,200 words per section (5–8 minutes) — for episodes of **30 minutes or more**. Longer sections lose people; shorter ones feel choppy. **Overview episodes (≤ 20 min) are the exception:** a 2,250-word episode cannot afford three 800-word minimums, let alone the five beats the overview template calls for. Use beats of **350–1,000 words** instead. Applying the 800-word floor to a short episode is arithmetically impossible and will silently blow the contract.
+- Budgets count **spoken words only** — see Pass 4.
 - **The tension**: what question is open at the start of this section, and what new question opens as it closes. Sections chain with "but" and "therefore," never "and then." If two adjacent sections connect with "and then," merge or reorder them.
 - **Recap beat**: where in the section the running recap lands (see audio constraints below).
 
@@ -73,7 +74,8 @@ A full editorial pass over the assembled draft, applying the audio constraints b
 - Verify signposting at every section boundary (phrasebook in the style guide).
 - Humor pass: sparse, dry, and load-bearing only — a joke should land on a concept, making it more memorable, never interrupt one. Cut any joke that requires a pause to work; TTS can't do comic timing reliably.
 - Verify the redundancy rule: every load-bearing idea stated at least twice, in different words, minutes apart — once when introduced, once woven into later material. Not verbatim repetition; re-derivation from a new angle.
-- Check the word count against the contract. Over budget: cut a section's scope, never compress its prose into density. Dense prose is unlistenable.
+- **Emphasis must survive being spoken.** Italics do not exist in audio, and the TTS voice has no emphasis mechanism to convert them into — every `*marker*` is simply stripped before rendering. So any emphasis you would express with italics has to be carried by word choice or sentence structure instead. This bites hardest where a contrast *is* the point: "she recovers *a* painting, not *the* original" collapses to "she recovers a painting, not the original" — the same words, the meaning gone. Rewrite it so the contrast lives in the words themselves ("not the one that was there — *some* painting, one that could have existed"). Scan for italics at polish time and rewrite every one; do not leave them for the TTS pass, where the only remaining option is to delete them.
+- Check the word count against the contract, **counting spoken words only**. Speaker tags, `[PAUSE:*]` markers, section headers, and the metadata block are not spoken and must not be counted. Counting the raw file instead inflates the total by roughly 15% and produces an episode that runs short of its contract while appearing to hit it. Over budget: cut a section's scope, never compress its prose into density. Dense prose is unlistenable.
 
 ### Pass 5 — TTS preparation
 

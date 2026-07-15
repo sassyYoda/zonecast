@@ -37,3 +37,8 @@ build/
 
 # macOS
 .DS_Store
+
+# Working notes from the hand-run test pass. Findings are folded into PRD.md and the
+# skill files, which are canonical; this is the historical record and contains claims
+# (word counts, "[APPLIED]" markers) that did not survive verification.
+TIGHTENING_NOTES.md

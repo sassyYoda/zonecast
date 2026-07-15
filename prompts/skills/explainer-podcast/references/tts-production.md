@@ -10,6 +10,14 @@ TTS models mispronounce notation confidently. Rewrite everything as it should be
 - Acronyms: decide pronunciation explicitly. Spell with spaced letters to force letter-reading ("G P U", "R L H F"); write pronounceable ones as words ("relu" → "RAY-loo" on first use, then "relu"). Establish each on first appearance, stay consistent.
 - Names and terms with unintuitive pronunciation: give a phonetic respelling on first use in the script text if the natural spelling misleads ("Dijkstra — DIKE-struh").
 - Symbols never survive: `→` becomes "maps to" or "leads to"; `≈` becomes "roughly"; `*`, `_`, `#`, backticks, and markdown artifacts must be stripped from the spoken text.
+- **Italic emphasis is a Pass 4 bug, not a normalization task.** Stripping `*a*` and `*the*` is
+  correct — the marker cannot be spoken — but if the emphasis was carrying meaning, stripping it
+  destroys the sentence and there is nothing you can do about it here. ("She recovers *a*
+  painting, not *the* original" → "She recovers a painting, not the original.") By this pass the
+  only options are delete the marker or read the asterisk aloud, and both are wrong. Pass 4 owns
+  rewriting emphasis into word choice. If you reach normalization and find italics doing
+  semantic work, that is a signal the polish pass missed something — flag it rather than
+  silently flattening it.
 - Citations, URLs, bracketed asides: cut entirely or convert to speech ("there's a 2017 paper on this — the famous one").
 
 ## Delivery markup
