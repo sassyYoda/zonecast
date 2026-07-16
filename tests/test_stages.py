@@ -280,6 +280,6 @@ def test_run_pipeline_skips_completed_and_runs_rest(tmp_path: Path, monkeypatch)
 
 def test_run_pipeline_unimplemented_stage_raises(tmp_path: Path) -> None:
     ctx = _ctx(tmp_path, CreateArgs(topic="t"))
-    # render is the first stage not yet built (generate/polish landed in phase 2).
-    with pytest.raises(NotImplementedError, match="render"):
-        run_pipeline(ctx, [Stage.render])
+    # publish is the first stage not yet built (package landed in phase 3).
+    with pytest.raises(NotImplementedError, match="publish"):
+        run_pipeline(ctx, [Stage.publish])

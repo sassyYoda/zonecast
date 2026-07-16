@@ -61,6 +61,9 @@ class _FakeCosts:
     def estimate_usd(self) -> float:
         return 0.0
 
+    def totals(self) -> dict[str, int]:
+        return {"input_tokens": 0, "output_tokens": 0}
+
 
 class _FakeLLM:
     """Stands in for LLMClient in the CLI wiring test — never touches the network."""
@@ -103,11 +106,35 @@ class _FakeLLM:
         if stage == "polish":
             owned = re.findall(r"## Section (\d+):.*\(TO POLISH\)", user)
             return "\n".join(f"## Section {n}: polished\n{body}" for n in owned)
+        if stage == "render":
+            # Normalization: echo the section body back (the render stage's deterministic
+            # markup pass handles [PAUSE:*]/[HOST]); no network.
+            return user.split("Section text:\n", 1)[1]
         raise AssertionError(f"unexpected text stage {stage}")
 
 
-def test_create_runs_pipeline_through_polish(tmp_path: Path, monkeypatch) -> None:
-    # ffmpeg may be absent in CI; stub the preflight check so create's shell still runs.
+class _FakeTTS:
+    """Stands in for TTSClient in the CLI wiring test — writes REAL tiny silent MP3 clips (so
+    the wired package stage can stitch them with ffmpeg), no network."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        self.chars_rendered = 0
+
+    def render_chunks(self, chunks, voice_id, model_id, out_dir):  # noqa: ANN001
+        from zonecast import audio
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+        paths = []
+        for i, chunk in enumerate(chunks):
+            p = out_dir / f"clip-{i:03d}.mp3"
+            audio.make_silence(0.3, p)
+            self.chars_rendered += len(chunk)
+            paths.append(p)
+        return paths
+
+
+def test_create_runs_pipeline_through_package(tmp_path: Path, monkeypatch) -> None:
+    # Stub only the preflight lookup; the package stage shells out to the real ffmpeg binary.
     monkeypatch.setattr("zonecast.config.shutil.which", lambda name: "/usr/bin/ffmpeg")
     # Redirect episode output into tmp and swap in the fake (no-API) LLM client.
     from zonecast.config import get_settings
@@ -115,6 +142,8 @@ def test_create_runs_pipeline_through_polish(tmp_path: Path, monkeypatch) -> Non
     settings = get_settings()
     monkeypatch.setattr(settings.config.paths, "episodes_dir", str(tmp_path))
     monkeypatch.setattr("zonecast.cli.LLMClient", _FakeLLM)
+    # render is now wired into create; stub the TTS client so no real ElevenLabs call happens.
+    monkeypatch.setattr("zonecast.stages.render.TTSClient", _FakeTTS)
 
     result = runner.invoke(app, ["create", "how transformers work", "--duration", "15", "--auto"])
     assert result.exit_code == 0, result.output
@@ -133,8 +162,16 @@ def test_create_runs_pipeline_through_polish(tmp_path: Path, monkeypatch) -> Non
     assert (ep / "draft" / "state-01.json").exists()
     final = ep / "script" / "final.md"
     assert final.exists()
-    assert "Script ready" in result.output
+    assert "Episode ready" in result.output
     text = final.read_text()
     assert text.startswith("# t")            # metadata title header
     assert "## Section 1: s1" in text        # canonical section headers
     assert "<!--" not in text                # no STATE comments in the deliverable
+    # render is wired: audio-ready text + clip manifest + clips land.
+    assert (ep / "script" / "tts.txt").exists()
+    assert (ep / "audio" / "clips.json").exists()
+    assert list((ep / "audio" / "clips").glob("*.mp3"))
+    # package is wired too: the stitched episode, chapters, and manifest all land.
+    assert (ep / "audio" / "episode.mp3").exists()
+    assert (ep / "audio" / "chapters.json").exists()
+    assert (ep / "manifest.json").exists()

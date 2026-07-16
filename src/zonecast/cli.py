@@ -28,13 +28,15 @@ from .pipeline import (
 )
 from .stages import CreateArgs, StageContext
 
-# Stages wired so far (phase 2). The render→publish stages extend this list as they land.
+# Stages wired so far (phase 3). Publish (M2) extends this list when it lands.
 _IMPLEMENTED: list[Stage] = [
     Stage.ingest,
     Stage.plan,
     Stage.blueprint,
     Stage.generate,
     Stage.polish,
+    Stage.render,
+    Stage.package,
 ]
 
 app = typer.Typer(
@@ -100,9 +102,11 @@ def create(
 
     run_pipeline(ctx, _IMPLEMENTED)
 
-    typer.echo(f"\nScript ready: {ep_dir / 'script' / 'final.md'}")
+    typer.echo(f"\nScript ready:   {ep_dir / 'script' / 'final.md'}")
+    typer.echo(f"Episode ready:  {ep_dir / 'audio' / 'episode.mp3'}")
+    typer.echo(f"Manifest:       {ep_dir / 'manifest.json'}")
     typer.echo(f"LLM cost so far: ${ctx.llm.costs.estimate_usd():.2f}")
-    typer.echo("[phase 2] Pipeline stops after polish; render → publish land in later phases.")
+    typer.echo("[phase 3] Pipeline stops after packaging; publish lands in M2.")
 
 
 def _url_label(url: str) -> str:
