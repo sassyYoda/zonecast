@@ -16,7 +16,26 @@ from pathlib import Path
 import typer
 
 from .config import Settings, get_settings, preflight
-from .pipeline import STAGES, Stage, episode_dir, episode_id, first_incomplete
+from .llm import LLMClient
+from .pipeline import (
+    STAGES,
+    Stage,
+    ensure_episode_dirs,
+    episode_dir,
+    episode_id,
+    first_incomplete,
+    run_pipeline,
+)
+from .stages import CreateArgs, StageContext
+
+# Stages wired so far (phase 2). The render→publish stages extend this list as they land.
+_IMPLEMENTED: list[Stage] = [
+    Stage.ingest,
+    Stage.plan,
+    Stage.blueprint,
+    Stage.generate,
+    Stage.polish,
+]
 
 app = typer.Typer(
     name="zonecast",
@@ -38,7 +57,7 @@ def _settings() -> Settings:
 
 @app.command()
 def create(
-    topic: str = typer.Argument(..., help="Topic string, e.g. \"how transformers work\"."),
+    topic: str | None = typer.Argument(None, help="Topic string, e.g. \"how transformers work\"."),
     duration: int | None = typer.Option(None, "--duration", help="Target length in minutes."),
     depth: str | None = typer.Option(None, "--depth", help="overview | standard | deep."),
     auto: bool = typer.Option(False, "--auto", help="Skip the offer prompt; pick the middle offer."),
@@ -48,29 +67,53 @@ def create(
     two_host: bool = typer.Option(False, "--two-host", help="Two-voice dialogue (M3)."),
     no_publish: bool = typer.Option(False, "--no-publish", help="Stop after packaging; don't publish."),
 ) -> None:
-    """Plan an episode and show where it will live (Phase 1 shell — stages run in later phases)."""
+    """Plan and build an episode through the polished script (ingest → … → generate → polish)."""
     settings = _settings()
     preflight(settings=settings)
 
-    ep_id = episode_id(topic, date.today().isoformat())
+    if sum(bool(x) for x in (topic, pdf, url)) != 1:
+        typer.echo("Provide exactly one source: a topic string, --pdf, or --url.", err=True)
+        raise typer.Exit(1)
+
+    label = topic or (pdf.stem if pdf else _url_label(url or ""))
+    ep_id = episode_id(label, date.today().isoformat())
     ep_dir = episode_dir(settings.config.paths.episodes_dir, ep_id)
+    ensure_episode_dirs(ep_dir)
 
-    source_kind = "pdf" if pdf else "url" if url else "topic"
-    source_ref = str(pdf) if pdf else url if url else topic
+    args = CreateArgs(
+        topic=topic,
+        pdf=pdf,
+        url=url,
+        duration=duration,
+        depth=depth,
+        auto=auto,
+        session=session,
+        two_host=two_host,
+    )
+    ctx = StageContext(episode_dir=ep_dir, settings=settings, llm=LLMClient(settings), args=args)
+    # Persist the request so `resume` can reconstruct this run without the original invocation.
+    ctx.write_json("request.json", args.to_dict())
 
-    typer.echo(f"Episode id:   {ep_id}")
+    typer.echo(f"Episode:      {ep_id}")
     typer.echo(f"Working dir:  {ep_dir}")
-    typer.echo(f"Source:       {source_kind} — {source_ref}")
-    typer.echo(f"Duration:     {duration if duration is not None else 'offer will span 15/45/120 min'}")
-    typer.echo(f"Depth:        {depth or 'from offer'}")
-    typer.echo(f"Format:       {'two-host' if two_host else 'solo'}")
-    if session:
-        typer.echo(f"Session:      {session}")
-    last = "package" if no_publish else "publish"
-    typer.echo(f"Plan:         {' -> '.join(s.value for s in STAGES if s.value != 'publish' or not no_publish)}")
     typer.echo(f"Offer select: {'auto (middle)' if auto else 'interactive'}")
-    typer.echo(f"Will run through stage: {last}")
-    typer.echo("\n[phase 1] Stage execution is wired in a later phase; nothing generated yet.")
+
+    run_pipeline(ctx, _IMPLEMENTED)
+
+    typer.echo(f"\nScript ready: {ep_dir / 'script' / 'final.md'}")
+    typer.echo(f"LLM cost so far: ${ctx.llm.costs.estimate_usd():.2f}")
+    typer.echo("[phase 2] Pipeline stops after polish; render → publish land in later phases.")
+
+
+def _url_label(url: str) -> str:
+    """Best-effort human-ish slug source from a URL, for the episode id."""
+    import re
+
+    m = re.search(r"arxiv\.org/abs/([\w.\-]+)", url, re.IGNORECASE)
+    if m:
+        return f"arxiv-{m.group(1)}"
+    tail = url.rstrip("/").rsplit("/", 1)[-1]
+    return re.sub(r"\.pdf$", "", tail, flags=re.IGNORECASE) or "episode"
 
 
 # --- resume -------------------------------------------------------------------------------
@@ -84,12 +127,39 @@ def resume(episode_id_arg: str = typer.Argument(..., metavar="EPISODE_ID")) -> N
     if not ep_dir.exists():
         typer.echo(f"No such episode: {ep_dir}", err=True)
         raise typer.Exit(1)
-    nxt = first_incomplete(ep_dir)
+
+    implemented = tuple(_IMPLEMENTED)
+    nxt = first_incomplete(ep_dir, implemented)
     if nxt is None:
-        typer.echo(f"{episode_id_arg}: all stages complete — nothing to resume.")
+        typer.echo(f"{episode_id_arg}: all wired stages complete — nothing to resume.")
         return
-    typer.echo(f"{episode_id_arg}: would resume from stage '{nxt.value}'.")
-    typer.echo("[phase 1] Stage execution is wired in a later phase.")
+
+    typer.echo(f"{episode_id_arg}: resuming from stage '{nxt.value}'.")
+    args = _load_args(ep_dir)
+    ctx = StageContext(episode_dir=ep_dir, settings=settings, llm=LLMClient(settings), args=args)
+    run_pipeline(ctx, _IMPLEMENTED)
+    typer.echo(f"LLM cost this run: ${ctx.llm.costs.estimate_usd():.2f}")
+
+
+def _load_args(ep_dir: Path) -> CreateArgs:
+    """Reconstruct the create args for a resume: from request.json when present, else from the
+    persisted source metadata (a topic-only best effort)."""
+    import json
+
+    request = ep_dir / "request.json"
+    if request.exists():
+        return CreateArgs.from_dict(json.loads(request.read_text()))
+    meta_path = ep_dir / "source" / "meta.json"
+    if meta_path.exists():
+        meta = json.loads(meta_path.read_text())
+        kind = meta.get("type")
+        ref = meta.get("ref")
+        if kind == "pdf":
+            return CreateArgs(pdf=Path(ref) if ref else None)
+        if kind == "url":
+            return CreateArgs(url=ref)
+        return CreateArgs(topic=ref)
+    return CreateArgs()
 
 
 # --- redo ---------------------------------------------------------------------------------

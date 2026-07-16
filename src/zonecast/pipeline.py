@@ -7,9 +7,14 @@ simplest scheme that is atomic per stage and trivially inspectable.
 
 from __future__ import annotations
 
+import importlib
 import re
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .stages import StageContext
 
 
 class Stage(str, Enum):
@@ -90,3 +95,29 @@ def first_incomplete(
         if not is_complete(ep_dir, stage):
             return stage
     return None
+
+
+def run_pipeline(ctx: "StageContext", stages: list[Stage]) -> None:
+    """Run ``stages`` in order, skipping any already marked complete (the resume entry point).
+
+    Each stage is dispatched to ``zonecast.stages.<name>.run(ctx)``. Stage modules are imported
+    lazily so this module has no import-time dependency on the ``stages`` package (which imports
+    back from here). A stage that hasn't been built yet raises a clear ``NotImplementedError``
+    rather than a bare ``ModuleNotFoundError``, so the next phase's gaps are obvious.
+    """
+    for stage in stages:
+        if is_complete(ctx.episode_dir, stage):
+            continue
+        try:
+            module = importlib.import_module(f"{__package__}.stages.{stage.value}")
+        except ModuleNotFoundError as exc:
+            raise NotImplementedError(
+                f"stage '{stage.value}' is not implemented yet "
+                f"(no zonecast/stages/{stage.value}.py)"
+            ) from exc
+        run_fn = getattr(module, "run", None)
+        if run_fn is None:
+            raise NotImplementedError(
+                f"stage '{stage.value}' module exposes no run(ctx) entry point"
+            )
+        run_fn(ctx)
