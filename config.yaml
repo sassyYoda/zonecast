@@ -20,7 +20,7 @@ tts:
   provider: elevenlabs
   model: eleven_multilingual_v2       # 10k char/request limit. Supports request stitching.
   model_fast: eleven_flash_v2_5       # `--fast` tier, ~50% cost. 40k char/request limit.
-  voice_host: ""                      # ElevenLabs voice ID — user must set
+  voice_host: "Fahco4VZzobUeiPqni1S"  # "Archer" — narrator voice
   voice_guest: ""                     # for two-host mode (M3)
   chunk_chars_min: 2000
   chunk_chars_max: 5000
@@ -30,7 +30,7 @@ tts:
   stitch_id_ttl_sec: 7200
   # MUST NOT exceed your ElevenLabs plan's concurrency cap or renders 429 mid-generate:
   # Free 2 | Starter 3 | Creator 5 | Pro 10 | Scale 15 | Business 15
-  max_parallel_requests: 3
+  max_parallel_requests: 2         # Free tier. Bump when you upgrade.
 
 script:
   wpm: 150

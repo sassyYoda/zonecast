@@ -24,7 +24,8 @@ TTS models mispronounce notation confidently. Rewrite everything as it should be
 
 - Keep sentences short; punctuation is the main pacing control most models respect. Em-dashes and ellipses produce natural hesitations; paragraph breaks produce longer pauses.
 - ElevenLabs' newer models support inline audio tags for delivery (emotional register, laughter, pauses) and the older models do not — check the current model's documentation and use whichever pause/expression mechanism it supports rather than assuming. Use delivery tags sparingly: one per few paragraphs at most, at genuine beats. Over-tagged scripts sound deranged.
-- The `[PAUSE:short|long]` markers from the script format are *your* markers — translate them into the target model's mechanism (punctuation, break tags, or splitting the audio request) at render time.
+- **On `eleven_multilingual_v2` (the pinned model), the pause mechanism is SSML `<break>`, confirmed by test.** `<break time="1.5s" />` inserts a real pause and is *not* spoken. Bracket audio tags (`[pause]`, `[excited]`, …) are a v3-only dialect — on v2 they are **read aloud as literal words** ("…first idea, *pause*, and here is…"), so never emit them for this model. Break duration is approximate — a 1.5 s request rendered ~1.3 s in test — and caps at 3 s; if a longer gap is needed, split the audio request instead. (This is why chapter timestamps come from measured clip durations, not requested break lengths — see stitching below.)
+- The `[PAUSE:short|long]` markers from the script format are *your* markers — translate them at render time. For `multilingual_v2`: `[PAUSE:short]` → `<break time="0.5s" />`, `[PAUSE:long]` → `<break time="1.5s" />` (starting values; tune by ear). These are the only delivery markup this model accepts — everything else is stripped.
 
 ## Chunking and stitching
 
