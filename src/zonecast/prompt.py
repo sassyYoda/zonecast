@@ -18,16 +18,21 @@ from .config import Settings, get_settings
 _SKILL = "SKILL.md"
 _LISTENER = "references/listener.md"
 _STYLE_GUIDE = "references/style-guide.md"
+_ANTI = "references/anti-patterns.md"
 _TTS = "references/tts-production.md"
 
 # Stages that inject the craft style guide (FR-2: "stages 3–5" = blueprint/generate/polish).
 _STYLE_GUIDE_STAGES = frozenset({"blueprint", "generate", "polish"})
+# Stages that inject the anti-pattern reference — the concrete "how not to sound generated"
+# examples belong where prose is actually written and edited, not at blueprint time.
+_ANTI_STAGES = frozenset({"generate", "polish"})
 # Stage that injects the TTS-production reference (FR-2: "stage 6" = render normalization).
 _TTS_STAGES = frozenset({"render"})
 
 # The stable prefix that is worth caching across the many per-section calls: SKILL + listener
-# + style-guide. The single ephemeral cache_control marker lands on the last of these present.
-_STABLE_PREFIX = (_SKILL, _LISTENER, _STYLE_GUIDE)
+# + style-guide + anti-patterns. The single ephemeral cache_control marker lands on the last of
+# these present for the stage, so the prefix caches across the many section-generation calls.
+_STABLE_PREFIX = (_SKILL, _LISTENER, _STYLE_GUIDE, _ANTI)
 
 
 def _skill_relpaths(stage: str) -> list[str]:
@@ -35,6 +40,8 @@ def _skill_relpaths(stage: str) -> list[str]:
     rel = [_SKILL, _LISTENER]
     if stage in _STYLE_GUIDE_STAGES:
         rel.append(_STYLE_GUIDE)
+    if stage in _ANTI_STAGES:
+        rel.append(_ANTI)
     if stage in _TTS_STAGES:
         rel.append(_TTS)
     return rel

@@ -265,3 +265,56 @@ def test_polish_writes_clean_final_in_output_format(tmp_path: Path) -> None:
 
     assert "*" not in spoken_text(final)
     assert is_complete(ctx.episode_dir, Stage.polish)
+
+
+# --- anti-pattern gates (style-guide §9, lever 2) -----------------------------------------
+
+
+def test_section_violations_flags_stock_opener_and_missing_build() -> None:
+    from zonecast.stages.polish import _section_violations
+
+    stock = "[HOST] Here's a thing that shouldn't be possible. It works. You ask. It answers."
+    assert any("stock opener" in v for v in _section_violations(stock))
+
+    short_only = "[HOST] It works. You ask it. It answers you. It never stored a thing. Neat. Small."
+    assert any("long build" in v for v in _section_violations(short_only))
+
+    good = (
+        "[HOST] Picture a wall of white tiles, thousands of them, and every item you add walks "
+        "up and throws a fixed number of darts that each black out one tile wherever a plain hash "
+        "rule happens to send them. That's the whole memory. No names anywhere."
+    )
+    assert _section_violations(good) == []
+
+
+def test_polish_repairs_a_stock_opener_section(tmp_path: Path) -> None:
+    import zonecast.stages.polish as polish
+
+    long_build = (
+        "Picture a wall of white tiles, thousands of them, and every item you add walks up and "
+        "throws a fixed number of darts that each black out one tile wherever a plain hash rule "
+        "sends them, and then leaves without ever writing its name down anywhere at all."
+    )
+
+    def text_fn(stage, user, i):  # noqa: ANN001
+        if "Problems to fix:" in user:  # the corrective re-polish call
+            owned = re.findall(r"## Section (\d+):", user)
+            n = owned[0]
+            return f"## Section {n}: whatever\n[HOST] {long_build} That's it."
+        owned = re.findall(r"## Section (\d+):.*\(TO POLISH\)", user)
+        # First pass emits a stock opener and only short sentences -> both gates fail.
+        return "\n".join(
+            f"## Section {n}: whatever\n[HOST] Here's a thing that shouldn't be possible. "
+            "It works. You ask. It answers. Small too." for n in owned
+        )
+
+    llm = RecordingLLM(text_fn)
+    ctx = _ctx(tmp_path, llm, sections=1, budget=450, duration=3)
+    _run_generate_drafts(ctx, 1)
+    polish.run(ctx)
+
+    # The window call violated both gates, so exactly one corrective re-polish fired.
+    assert any("Problems to fix:" in c["user"] for c in llm.text_calls)
+    final = ctx.read_text("script/final.md")
+    assert "shouldn't be possible" not in final           # stock opener gone
+    assert "throws a fixed number of darts" in final       # the repaired long build landed

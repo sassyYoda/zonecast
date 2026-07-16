@@ -48,6 +48,49 @@ _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 # the emphasis into word choice; this is the belt-and-suspenders guarantee.
 _EMPHASIS = re.compile(r"(\*{1,3}|_{1,3})(.+?)\1", re.DOTALL)
 
+# Anti-pattern gates enforced deterministically after polish (style-guide §9 / anti-patterns.md).
+# The checklist alone doesn't reliably shift these two — they're model defaults — so we scan the
+# output and re-polish offending sections once. Stock openers, checked only against a section's
+# first words (a generic hook that would fit any topic is the tell; a specific concrete opener
+# like "Picture a wall of white tiles" is fine, so we ban the generic phrasings, not "picture").
+_BANNED_OPENERS = (
+    "here's a thing that shouldn't be possible",
+    "here's something that shouldn't be possible",
+    "here's the thing",
+    "imagine a world",
+    "what if i told you",
+    "picture this",
+    "let me tell you",
+    "in a world where",
+)
+_OPENER_SCAN_CHARS = 140
+# Machines avoid the long build; each section needs at least one clause-stacked sentence that
+# earns its length, set against short ones (the anti-metronome rule).
+_MIN_LONG_BUILD_WORDS = 28
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+
+def _section_violations(body: str) -> list[str]:
+    """Return anti-pattern gate failures for one polished section body (empty = clean)."""
+    spoken = spoken_text(body)
+    violations: list[str] = []
+    head = spoken[:_OPENER_SCAN_CHARS].lower()
+    for opener in _BANNED_OPENERS:
+        if opener in head:
+            violations.append(
+                f"stock opener {opener!r} — a generic hook that fits any topic. Open instead on "
+                "the specific concrete image, number, or scene of THIS subject."
+            )
+            break
+    lengths = [len(s.split()) for s in _SENTENCE_SPLIT.split(spoken) if s.strip()]
+    if lengths and max(lengths) < _MIN_LONG_BUILD_WORDS:
+        violations.append(
+            f"no real long build (longest sentence is {max(lengths)} words) — add one genuinely "
+            "long, clause-stacked sentence of ~30-40 words that earns its length by walking "
+            "through a process or piling up a case, then break to something short."
+        )
+    return violations
+
 
 def run(ctx: "StageContext") -> None:
     bp = Blueprint.model_validate(ctx.read_json(_BLUEPRINT_PATH))
@@ -72,8 +115,46 @@ def run(ctx: "StageContext") -> None:
             stripped_emphasis += hits
         done.update(owned)
 
+    # Deterministic anti-pattern gates (style-guide §9): re-polish any section that opens on a
+    # stock hook or lacks a real long build. One corrective round, then accept and log — the same
+    # shape as the generate budget retry.
+    by_n = {s.n: s for s in bp.sections}
+    for n in sorted(polished):
+        violations = _section_violations(polished[n])
+        if not violations:
+            continue
+        _log.warning("polish: section %d anti-pattern gate: %s — one corrective re-polish", n, violations)
+        retry = ctx.llm.text(
+            "polish", system, _build_repair_user(bp, by_n[n], polished[n], violations),
+            max_tokens=_POLISH_MAX_TOKENS,
+        )
+        clean, hits = _clean_body(_parse_sections(retry).get(n, retry))
+        polished[n] = clean
+        stripped_emphasis += hits
+        remaining = _section_violations(clean)
+        if remaining:
+            _log.warning("polish: section %d still %s after one retry — accepting", n, remaining)
+
     _assemble_and_write(ctx, bp, offer, polished, stripped_emphasis)
     mark_complete(ctx.episode_dir, Stage.polish)
+
+
+def _build_repair_user(bp: Blueprint, section, body: str, violations: list[str]) -> str:
+    """Prompt to re-polish one section, fixing named anti-pattern violations, content intact."""
+    return "\n".join([
+        f'This polished section of "{bp.title}" has specific anti-pattern problems. Rewrite ONLY '
+        "this section to fix them. Keep the same content and teaching, keep the [HOST] tag and any "
+        "[PAUSE:short|long] markers, and stay near the same length.",
+        "",
+        "Problems to fix:",
+        *[f"- {v}" for v in violations],
+        "",
+        f"## Section {section.n}: {section.name} [~{section.word_budget} words]",
+        body.strip(),
+        "",
+        "Output just the rewritten section body under its '## Section N: ...' header — no episode "
+        "metadata, no STATE, no commentary.",
+    ])
 
 
 def _load_drafts(ctx: "StageContext", bp: Blueprint) -> dict[int, str]:
@@ -133,6 +214,12 @@ def _build_window_user(
         "- EMPHASIS: rewrite every italic/bold emphasis into word choice or sentence structure. "
         "Italics cannot be spoken and are stripped before TTS, so no '*...*' or '_..._' may "
         "remain — the contrast must live in the words themselves.",
+        "- OPENING: never open a section on a generic hook that would fit any topic ('here's a "
+        "thing that shouldn't be possible', 'imagine a world', 'picture this', 'what if I told "
+        "you'). Open on the specific concrete image, number, or scene of THIS subject.",
+        "- RHYTHM: each section must contain at least one genuinely long, clause-stacked sentence "
+        "(~30-40 words) that earns its length, set against short ones. Avoid medium-everything and "
+        "avoid the long-sentence-then-fragment metronome; see anti-patterns.md.",
         "- Hold each section near its spoken-word budget; over budget, cut scope, never compress "
         "prose into density.",
         "",
@@ -244,3 +331,23 @@ def _self_check(
         )
     survivors = len(_EMPHASIS.findall(spoken_text(final_md)))
     _log.info("polish self-check: %d surviving emphasis marker(s) in the spoken text", survivors)
+
+    # Report any anti-pattern gate that survived the corrective retry, per section.
+    residual = {
+        n: v
+        for n, v in (
+            (m.group(1), _section_violations(body))
+            for m, body in _iter_section_bodies(final_md)
+        )
+        if v
+    }
+    if residual:
+        _log.warning("polish self-check: anti-pattern gates still failing after retry: %s", residual)
+
+
+def _iter_section_bodies(final_md: str):
+    """Yield (header_match, body) for each ## Section block in the assembled script."""
+    matches = list(_SECTION_HEADER.finditer(final_md))
+    for i, m in enumerate(matches):
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(final_md)
+        yield m, final_md[m.end():end]
