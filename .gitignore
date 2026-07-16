@@ -42,3 +42,6 @@ build/
 # skill files, which are canonical; this is the historical record and contains claims
 # (word counts, "[APPLIED]" markers) that did not survive verification.
 TIGHTENING_NOTES.md
+
+# GSD planning docs — local only (git tracking disabled at init)
+.planning/
